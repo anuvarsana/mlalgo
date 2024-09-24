@@ -1,0 +1,96 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+df=pd.read_csv("C:/Users/91822/Desktop/college/ML lab/play-tennis-classification-data-source.png.csv")
+df.drop(['Day'],inplace=True,axis=1)
+df
+features=df.columns[:-1]
+features
+df.info()
+df.describe()
+df['PlayTennis'].value_counts()
+discrete=df.select_dtypes(include=['object']).columns[:-1]
+discrete
+continuous=df.select_dtypes(include=['int64','float64']).columns
+continuous
+X=df.iloc[:,:-1]
+Y=df.iloc[:,-1]
+
+from sklearn.model_selection import train_test_split
+
+x_train,x_test,y_train,y_test=train_test_split(X,Y,test_size=0.2,random_state=42)
+train_data=np.concatenate((np.array(x_train),np.array(y_train).reshape(-1,1)),axis=1)
+test_data=np.concatenate((np.array(x_test),np.array(y_test).reshape(-1,1)),axis=1)
+
+
+train_data=pd.DataFrame(train_data,columns=list(features)+['PlayTennis'])
+test_data=pd.DataFrame(test_data,columns=list(features)+['PlayTennis'])
+train_data
+test_data
+#Prior probabilities
+y_poss=df['PlayTennis'].unique()
+y_poss
+prior_proba={}
+for i in y_poss:
+    prior_proba[i]=float(len(train_data[train_data['PlayTennis']==i]))/len(train_data)
+    
+prior_proba
+CPM for discrete
+cpm_discrete={}
+for i in discrete:
+    cpm_discrete[i]={}
+    for j in train_data[i].unique():
+        cpm_discrete[i][j]={}
+        for k in y_poss:
+            cpm_discrete[i][j][k]=float(len(train_data[(train_data[i]==j)&(train_data['PlayTennis']==k)]))/len(train_data[train_data['PlayTennis']==k])
+            
+cpm_discrete
+alpha=0.1
+for i in discrete:
+    for j in train_data[i].unique():
+        for k in y_poss:
+            if(cpm_discrete[i][j][k]==0):
+                for s in train_data[i].unique():
+                    cpm_discrete[i][s][k]=float(len(train_data[(train_data['PlayTennis']==k)&(train_data[i]==s)])+alpha)/(len(train_data[train_data['PlayTennis']==k])+alpha*len(train_data[i].unique()))
+cpm_discrete
+continuous cpm
+continuous_cpm={}
+for i in continuous:
+    continuous_cpm[i]={}
+    continuous_cpm[i]['mean']={}
+    continuous_cpm[i]['std']={}
+    for j in y_poss:
+        continuous_cpm[i]['mean'][j]=train_data[train_data['PlayTennis']==j][i].mean()
+        continuous_cpm[i]['std'][j]=train_data[train_data['PlayTennis']==j][i].std()
+        
+continuous_cpm
+y_pred=[]
+for i in range(len(test_data)):
+    pred={}
+    denom=0
+    for j in y_poss:
+        sum=prior_proba[j]
+        for k in discrete:
+            sum*=cpm_discrete[k][test_data.iloc[i][k]][j]
+        for k in continuous:
+            proba=1.0/(continuous_cpm[k]['std'][j]*(2*np.pi)**0.5)*np.exp(-(test_data.iloc[i][k]-continuous_cpm[k]['mean'][j])**2/(2*continuous_cpm[k]['std'][j]**2))
+            sum*=proba
+        denom+=sum
+    for j in y_poss:
+        numerator=prior_proba[j]
+        for k in discrete:
+            numerator*=cpm_discrete[k][train_data.iloc[i][k]][j]
+        for k in continuous:
+            proba=1.0/(continuous_cpm[k]['mean'][j]*(2*np.pi)**0.5)*np.exp(-(train_data.iloc[i][k]-continuous_cpm[k]['mean'][j])**2/(2*continuous_cpm[k]['std'][j]**2))
+            numerator*=proba
+        pred[j]=float(numerator)/denom
+    y_pred.append(max(pred,key=pred.get))
+y_pred
+print(np.concatenate((np.array(y_pred).reshape(-1,1),np.array(y_test).reshape(-1,1)),axis=1))
+from sklearn.metrics import accuracy_score,confusion_matrix,f1_score,recall_score,precision_score
+
+c=confusion_matrix(y_pred=y_pred,y_true=y_test)
+c
+print(accuracy_score(y_pred,y_test))
+print(recall_score(y_pred,y_test,average='weighted'))
+print(f1_score(y_pred=y_pred,y_true=y_test,average='weighted'))
